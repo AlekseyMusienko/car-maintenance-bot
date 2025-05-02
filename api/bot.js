@@ -3,12 +3,18 @@ const { Telegraf, Markup } = require('telegraf');
 const LocalSession = require('telegraf-session-local');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
+const express = require('express');
 
 console.log('Запуск бота...');
 console.log('BOT_TOKEN:', process.env.BOT_TOKEN ? 'Установлен' : 'Не установлен');
 console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'Установлен' : 'Не установлен');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const app = express();
+
+// Настройка Express для обработки JSON и вебхуков
+app.use(express.json());
+app.use(bot.webhookCallback('/api/bot'));
 
 // Подключение к MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -267,7 +273,7 @@ cron.schedule('0 0 * * 0', async () => {
 });
 
 // Настройка вебхука
-bot.telegram.setWebhook(`https://car-maintenance-bot.onrender.com`)
+bot.telegram.setWebhook(`https://car-maintenance-bot.onrender.com/api/bot`)
   .then(() => {
     console.log('Вебхук успешно установлен');
   })
@@ -275,13 +281,8 @@ bot.telegram.setWebhook(`https://car-maintenance-bot.onrender.com`)
     console.error('Ошибка установки вебхука:', err);
   });
 
-// Обработчик для Render
-module.exports = async (req, res) => {
-  try {
-    console.log('Получен запрос от Telegram:', req.body);
-    await bot.handleUpdate(req.body, res);
-  } catch (err) {
-    console.error('Ошибка обработки запроса:', err);
-    res.status(500).send('Internal Server Error');
-  }
-};
+// Запуск сервера
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Сервер запущен на порту ${port}`);
+});
