@@ -267,7 +267,7 @@ cron.schedule('0 0 * * 0', async () => {
 });
 
 // Настройка вебхука
-bot.telegram.setWebhook(`https://<твой-render-домен>.onrender.com/api/bot`)
+bot.telegram.setWebhook(`https://car-maintenance-bot.onrender.com`)
   .then(() => {
     console.log('Вебхук успешно установлен');
   })
