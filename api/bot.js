@@ -53,6 +53,7 @@ const mainMenu = Markup.inlineKeyboard([
   [Markup.button.callback('История (полная)', 'full_history')],
   [Markup.button.callback('История (с последней замены)', 'last_history')],
   [Markup.button.callback('История ремонтов', 'repair_history')],
+  [Markup.button.callback('Экспорт данных', 'export_data')],
 ]);
 
 // Категории ремонта
@@ -479,15 +480,18 @@ bot.action('repair_history', async (ctx) => {
     const user = await User.findOne({ user_id: userId });
     if (!user || user.repairs.length === 0) {
       ctx.reply('История ремонтов пуста.', mainMenu);
+      console.log(`[DEBUG] user.repairs is empty for user ${userId}`);
       return;
     }
 
+    console.log(`[DEBUG] Found ${user.repairs.length} repairs for user ${userId}`);
     for (let i = 0; i < user.repairs.length; i++) {
       const r = user.repairs[i];
       const message = `Ремонт #${i + 1}:\nКатегория: ${r.category}\nДата: ${r.date}\nПробег: ${r.mileage} км\nЗапчасти: ${r.parts.length > 0 ? r.parts.map(p => `${p.name} (${p.cost} руб)`).join(', ') : 'нет'}\nСтоимость ремонта: ${r.repair_cost} руб\nКомментарий: ${r.comment || 'нет'}`;
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('Редактировать', `edit_repair_${i}`), Markup.button.callback('Удалить', `delete_repair_${i}`)]
       ]);
+      console.log(`[DEBUG] Sending repair #${i + 1} for user ${userId}, has photo: ${!!r.photo_id}`);
       if (r.photo_id) {
         await bot.telegram.sendPhoto(ctx.from.id, r.photo_id, { caption: message, reply_markup: keyboard.reply_markup });
       } else {
@@ -715,14 +719,54 @@ bot.command('export', async (ctx) => {
       }
     });
 
-    const fileName = `export_${userId}_${Date.now()}.csv`;
-    require('fs').writeFileSync(fileName, csv);
-    await bot.telegram.sendDocument(userId, { source: fileName, filename: 'export.csv' });
-    require('fs').unlinkSync(fileName);
+    // Отправляем CSV как текст, чтобы избежать проблем с файлами на Render
+    await ctx.replyWithDocument({
+      source: Buffer.from(csv, 'utf-8'),
+      filename: `export_${userId}_${Date.now()}.csv`
+    });
     ctx.reply('Данные экспортированы.', mainMenu);
   } catch (err) {
     console.error('Ошибка экспорта:', err);
-    ctx.reply('Произошла ошибка, попробуйте снова.');
+    ctx.reply('Произошла ошибка при экспорте. Попробуйте снова.', mainMenu);
+  }
+});
+
+// Экспорт через кнопку
+bot.action('export_data', async (ctx) => {
+  try {
+    const userId = ctx.from.id;
+    const user = await User.findOne({ user_id: userId });
+    if (!user || (user.oil_changes.length === 0 && user.oil_adds.length === 0 && user.repairs.length === 0)) {
+      ctx.reply('Нет данных для экспорта.', mainMenu);
+      return;
+    }
+
+    let csv = 'Type,Date,Category,PartName,PartCost,Mileage,RepairCost,Comment,OilName,OilAmount\n';
+    user.oil_changes.forEach(c => {
+      csv += `OilChange,${c.date},,,${c.mileage},,,${c.oil_name},\n`;
+    });
+    user.oil_adds.forEach(a => {
+      csv += `OilAdd,${a.date},,,${a.mileage},,,,,${a.amount}\n`;
+    });
+    user.repairs.forEach(r => {
+      if (r.parts.length === 0) {
+        csv += `Repair,${r.date},${r.category},,0,${r.mileage},${r.repair_cost},${r.comment || ''},\n`;
+      } else {
+        r.parts.forEach(p => {
+          csv += `Repair,${r.date},${r.category},${p.name},${p.cost},${r.mileage},${r.repair_cost},${r.comment || ''},\n`;
+        });
+      }
+    });
+
+    await ctx.replyWithDocument({
+      source: Buffer.from(csv, 'utf-8'),
+      filename: `export_${userId}_${Date.now()}.csv`
+    });
+    ctx.reply('Данные экспортированы.', mainMenu);
+    await ctx.answerCbQuery();
+  } catch (err) {
+    console.error('Ошибка экспорта через кнопку:', err);
+    ctx.reply('Произошла ошибка при экспорте. Попробуйте снова.', mainMenu);
   }
 });
 
